@@ -1,0 +1,220 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+  FREEZE
+}
+
+enum OtpChannel {
+  EMAIL
+  PHONE
+}
+
+enum Provider {
+  GOOGLE
+  FACEBOOK
+  GITHUB
+  APPLE
+}
+
+enum Purpose {
+  REGISTER
+  LOGIN
+  RESET_PASSWORD
+  CHANGE_PASSWORD
+  VERIFY_EMAIL
+  VERIFY_PHONE
+}
+
+enum CategoryType {
+  MEAL
+  DIET
+  COOKING_METHOD
+  OCCASION
+}
+
+model User {
+  id                  Int                  @id @default(autoincrement())
+  firstName           String?              @db.VarChar(52)
+  lastName            String?              @db.VarChar(52)
+  email               String?              @unique @db.VarChar(254)
+  phone               String?              @unique @db.VarChar(15)
+  password            String?
+  role                Role                 @default(USER)
+  status              Status               @default(ACTIVE)
+  errorLoginCount     Int                  @default(0) @db.SmallInt
+  refreshToken        String?
+  image               String?
+  emailVerifiedAt     DateTime?
+  phoneVerifiedAt     DateTime?
+  countryId           Int?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  country             Country?             @relation(fields: [countryId], references: [id])
+  socialMediaAccounts SocialMediaAccount[]
+  reviews             Review[]
+}
+
+model Recipe {
+  id                Int                @id @default(autoincrement())
+  title             String             @db.VarChar(255)
+  description       String?            @db.Text
+  image             String?            @db.Text
+  prepTime          Int?               @db.SmallInt
+  cookingTime       Int?               @db.SmallInt
+  servings          Int?               @db.SmallInt
+  countryId         Int
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  reviews           Review[]
+  country           Country            @relation(fields: [countryId], references: [id])
+  recipeIngredients RecipeIngredient[]
+  recipeSteps       RecipeStep[]
+  recipeCategories  RecipeCategory[]
+  @@index([countryId])
+  @@index([title])
+}
+
+model Country {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(100)
+  code        String    @unique @db.VarChar(2)
+  continentId Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  recipes     Recipe[]
+  users       User[]
+  continent   Continent @relation(fields: [continentId], references: [id])
+
+  @@index([continentId])
+}
+
+model Continent {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique @db.VarChar(100)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  countries Country[]
+}
+
+model SocialMediaAccount {
+  id                Int      @id @default(autoincrement())
+  userId            Int
+  provider          Provider
+  providerAccountId String   @db.VarChar(255)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  recipeId  Int
+  rating    Int      @db.SmallInt
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recipeId])
+  @@index([recipeId])
+}
+
+model RecipeIngredient {
+  id           Int        @id @default(autoincrement())
+  recipeId     Int
+  ingredientId Int
+  quantity     String?    @db.VarChar(100)
+  unit         String?    @db.VarChar(50)
+  preparation  String?    @db.VarChar(100)
+  position     Int?       @db.SmallInt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  @@unique([recipeId, ingredientId])
+  @@unique([recipeId, position])
+  @@index([ingredientId])
+}
+
+model Ingredient {
+  id                Int                @id @default(autoincrement())
+  name              String             @unique @db.VarChar(100)
+  image             String?            @db.Text
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  recipeIngredients RecipeIngredient[]
+}
+
+model RecipeStep {
+  id          Int     @id @default(autoincrement())
+  recipeId    Int
+  stepNumber  Int     @db.SmallInt
+  instruction String  @db.Text
+  image       String? @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  recipe      Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, stepNumber])
+}
+
+model Category {
+  id               Int              @id @default(autoincrement())
+  name             String           @unique @db.VarChar(100)
+  type             CategoryType
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  recipeCategories RecipeCategory[]
+}
+
+model RecipeCategory {
+  id         Int      @id @default(autoincrement())
+  recipeId   Int
+  categoryId Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, categoryId])
+  @@index([categoryId])
+}
+
+model Otp {
+  id            Int        @id @default(autoincrement())
+  channel       OtpChannel
+  purpose       Purpose
+  recipient     String     @unique @db.VarChar(254)
+  otpCode       String     @db.VarChar(255)
+  rememberToken String?    @db.VarChar(255)
+  verifyToken   String?    @db.VarChar(255)
+  verifyAt      DateTime?
+  attemptCount  Int        @default(0) @db.SmallInt
+  requestError  Int        @default(0) @db.SmallInt
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}

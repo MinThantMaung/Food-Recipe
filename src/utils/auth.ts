@@ -1,10 +1,29 @@
 import { errorCode } from "../../config/error";
 import { Prisma } from "../../generated/prisma/client";
 
+export enum Continent {
+  ASIA = "ASIA",
+  AFRICA = "AFRICA",
+  NORTH_AMERICA = "NORTH_AMERICA",
+  SOUTH_AMERICA = "SOUTH_AMERICA",
+  ANTARCTICA = "ANTARCTICA",
+  EUROPE = "EUROPE",
+  OCEANIA = "OCEANIA",
+}
+
 export const checkUserIfExist = (user : Prisma.UserCreateInput | null) => {
   if (user) {
-    const error: any = new Error("User does not exist");
+    const error: any = new Error("User already exist");
     error.status = 404;
+    error.code = errorCode.notfound;
+    throw error;
+  }
+}
+
+export const checkUserIfNotExist = (user : Prisma.UserCreateInput | null) => {
+  if(!user){
+    const error: any = new Error("User does not exist");
+    error.status = 409;
     error.code = errorCode.notfound;
     throw error;
   }
@@ -31,4 +50,48 @@ export const checkOtpErrorIfSameDate = (
     error.code = "overLimit";
     throw error;
   }
+};
+
+export const COUNTRIES_BY_CONTINENT: Record<
+  Continent,
+  readonly string[]
+> = {
+  [Continent.ASIA]: [
+    "Japan",
+    "Myanmar",
+    "China",
+    "Thailand",
+  ],
+
+  [Continent.AFRICA]: [
+    "Egypt",
+    "Nigeria",
+    "South Africa",
+  ],
+
+  [Continent.NORTH_AMERICA]: [
+    "Canada",
+    "United States",
+    "Mexico",
+  ],
+
+  [Continent.SOUTH_AMERICA]: [
+    "Brazil",
+    "Argentina",
+    "Chile",
+  ],
+
+  [Continent.ANTARCTICA]: [],
+
+  [Continent.EUROPE]: [
+    "France",
+    "Germany",
+    "Italy",
+  ],
+
+  [Continent.OCEANIA]: [
+    "Australia",
+    "New Zealand",
+    "Fiji",
+  ],
 };

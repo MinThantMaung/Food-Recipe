@@ -24,9 +24,22 @@ export const createOtp = async (otpData: Prisma.OtpCreateInput) => {
   })
 }
 
+export const createUser = async (userData: Prisma.UserCreateInput) => {
+  return await prismaClient.user.create({
+    data: userData,
+  })
+}
+
 export const updateOtp = async(id: number,otpData: any) => {
   return await prismaClient.otp.update({
     where: { id },
     data: otpData
+  })
+}
+
+export const updateUser = async(id: number, userData: any) => {
+  return await prismaClient.user.update({
+    where: {id},
+    data: userData
   })
 }

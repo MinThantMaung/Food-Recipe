@@ -12,6 +12,12 @@ export const getUserByValue = async (value: string, type: RegisterType) => {
   });
 }
 
+export const getUserById = async (id: number) => {
+  return await prismaClient.user.findUnique({
+    where: { id }
+  })
+}
+
 export const getOtpByValue = async (recipient: string) => {
   return await prismaClient.otp.findUnique({
     where: { recipient },

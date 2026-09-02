@@ -10,6 +10,7 @@ import {
   createOtp,
   createUser,
   getOtpByValue,
+  getUserById,
   getUserByValue,
   updateOtp,
   updateUser,
@@ -23,8 +24,9 @@ import {
   COUNTRIES_BY_CONTINENT,
 } from "../utils/auth";
 import { generateToken } from "../utils/generate";
-import { Prisma } from "../../generated/prisma/client";
+import { OtpChannel, Prisma } from "../../generated/prisma/client";
 import { UserCreateInput } from "../../generated/prisma/models";
+import validator from "validator";
 
 type RegistrationType = "phone" | "email";
 
@@ -401,11 +403,9 @@ export const login = [
         if (user!.errorLoginCount >= 5) {
           const validTime = moment().diff(user!.updatedAt, "minutes") > 1;
           if (!validTime) {
-            return next(createError(
-              "Please try again later",
-              429,
-              errorCode.overLimit,
-            ));
+            return next(
+              createError("Please try again later", 429, errorCode.overLimit),
+            );
           } else {
             const userData = {
               errorLoginCount: 1,
@@ -426,7 +426,7 @@ export const login = [
       );
     }
 
-     if (user!.status === "FREEZE") {
+    if (user!.status === "FREEZE") {
       return next(
         createError(
           "Your account has been frozen. Please contact support.",
@@ -491,9 +491,7 @@ export const countryContinent = [
     .withMessage("Registration type is required")
     .bail()
     .isIn(["phone", "email"])
-    .withMessage(
-      "Registration type must be phone or email"
-    ),
+    .withMessage("Registration type must be phone or email"),
 
   body("value")
     .isString()
@@ -507,9 +505,7 @@ export const countryContinent = [
     .matches(/^[0-9]+$/)
     .withMessage("Phone number must contain only digits")
     .isLength({ min: 5, max: 12 })
-    .withMessage(
-      "Phone number must be between 5 and 12 digits"
-    ),
+    .withMessage("Phone number must be between 5 and 12 digits"),
 
   body("value")
     .if((_value, { req }) => req.body.type === "email")
@@ -532,23 +528,15 @@ export const countryContinent = [
     .withMessage("Country is required")
     .bail()
     .isAlpha()
-    .withMessage(
-      "Country code must contain only letters"
-    )
+    .withMessage("Country code must contain only letters")
     .isLength({ min: 2, max: 2 })
-    .withMessage(
-      "Country code must contain exactly 2 letters"
-    )
+    .withMessage("Country code must contain exactly 2 letters")
     .toUpperCase(),
 
   async (
-    req: Request<
-      Record<string, never>,
-      unknown,
-      CountryContinentRequestBody
-    >,
+    req: Request<Record<string, never>, unknown, CountryContinentRequestBody>,
     res: Response,
-    next: NextFunction
+    next: NextFunction,
   ) => {
     try {
       const errors = validationResult(req).array({
@@ -556,21 +544,10 @@ export const countryContinent = [
       });
 
       if (errors.length > 0) {
-        return next(
-          createError(
-            errors[0].msg,
-            400,
-            errorCode.invalid
-          )
-        );
+        return next(createError(errors[0].msg, 400, errorCode.invalid));
       }
 
-      const {
-        type,
-        value,
-        continentId,
-        countryCode,
-      } = req.body;
+      const { type, value, continentId, countryCode } = req.body;
 
       // const country =
       //   await prismaClient.country.findFirst({
@@ -620,12 +597,169 @@ export const countryContinent = [
       //   },
       // };
 
-
       return res.status(200).json({
         message: "Country and continent are valid",
       });
     } catch (error) {
       return next(error);
     }
+  },
+];
+
+export const logout = [
+  async (req: Request, res: Response, next: NextFunction) => {
+    const refreshToken = req.cookies ? req.cookies.refreshToken : null;
+
+    if (!refreshToken) {
+      return next(
+        createError(
+          "You are not authenticated user!",
+          401,
+          errorCode.unauthenticated,
+        ),
+      );
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET!) as {
+        id: number;
+        recipient: string;
+      };
+    } catch (err) {
+      return next(
+        createError(
+          "You are not authenticated user!",
+          401,
+          errorCode.unauthenticated,
+        ),
+      );
+    }
+
+    const user = await getUserById(decoded.id);
+    checkUserIfNotExist(user);
+
+    if (user!.email != decoded.recipient || user!.phone != decoded.recipient) {
+      return next(
+        createError(
+          "You are not authenticated user!",
+          401,
+          errorCode.unauthenticated,
+        ),
+      );
+    }
+
+    const userData = {
+      refreshToken: generateToken(),
+    };
+
+    await updateUser(user!.id, userData);
+
+    res.clearCookie("accessToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+    });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+    });
+
+    res.status(200).json({ message: "Successfully Logged Out!." });
+  },
+];
+
+export const forgetPassword = [
+  body("identifier")
+    .trim()
+    .notEmpty()
+    .withMessage("Email or phone number is required")
+    .bail()
+    .custom((value: string) => {
+      if (value.includes("@")) {
+        if (!validator.isEmail(value)) {
+          throw new Error("Invalid email address");
+        }
+        return true;
+      }
+
+      if (!/^\+[1-9]\d{7,14}$/.test(value)) {
+        throw new Error(
+          "Invalid phone number. Use format such as +819012345678",
+        );
+      }
+      return true;
+    }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const errors = validationResult(req).array({ onlyFirstError: true });
+    if (errors.length > 0) {
+      return next(createError(errors[0].msg, 400, errorCode.invalid));
+    }
+    const { identifier } = req.body;
+    const type: RegistrationType = identifier.includes("@") ? "email" : "phone";
+
+    const user = await getUserByValue(identifier, type);
+    checkUserIfNotExist(user);
+
+    const channel: OtpChannel =
+      type === "email" ? OtpChannel.EMAIL : OtpChannel.PHONE;
+
+    const otp = 123456; // TODO: Remove this line and uncomment the above line when in production
+    const salt = await bcrypt.genSalt(10);
+    const hashedOtp = await bcrypt.hash(otp.toString(), salt);
+    const token = generateToken();
+
+    const otpRow = await getOtpByValue(identifier);
+    let result;
+    if (!otpRow) {
+      const otpData: Prisma.OtpCreateInput = {
+        recipient: identifier,
+        otpCode: hashedOtp,
+        rememberToken: token,
+        purpose: "REGISTER",
+        channel,
+      };
+      result = await createOtp(otpData);
+    } else {
+      const lastOtpRequest = new Date(otpRow.updatedAt).toLocaleDateString();
+      const today = new Date().toLocaleDateString();
+      const isSameDay = lastOtpRequest === today;
+      checkOtpErrorIfSameDate(isSameDay, otpRow.attemptCount);
+      if (!isSameDay) {
+        const otpData: any = {
+          otpCode: hashedOtp,
+          rememberToken: token,
+          attemptCount: 1,
+          requestError: 0,
+        };
+        result = await updateOtp(otpRow.id, otpData);
+      } else {
+        if (otpRow.attemptCount === 5) {
+          return next(
+            createError(
+              "You have reached the maximum number of OTP requests for today. Please try again tomorrow.",
+              400,
+              errorCode.overLimit,
+            ),
+          );
+        } else {
+          const otpData: any = {
+            otpCode: hashedOtp,
+            rememberToken: token,
+            attemptCount: {
+              increment: 1,
+            },
+          };
+          result = await updateOtp(otpRow.id, otpData);
+        }
+      }
+    }
+    res.status(200).json({
+      message: `OTP  successfully sent to ${identifier} for reset password!`,
+      value: result.recipient,
+      token: result.rememberToken,
+    });
   },
 ];
